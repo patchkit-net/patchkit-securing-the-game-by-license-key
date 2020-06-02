@@ -1,6 +1,7 @@
 # PatchKit Securing The Game By License Key
 
 In this repository you can find PatchKit Securing The Game By License Key project.
+This package allows you to check the license key from the app_data.json file created by the [Patchkit Launcher](http://docs.patchkit.net/launcher_overview.html).
 
 ## Installation steps
 
