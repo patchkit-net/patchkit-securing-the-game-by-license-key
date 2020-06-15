@@ -1,204 +1,334 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
 using System.Net;
-using UnityEngine;
 using Newtonsoft.Json;
 using UnityEditor;
+using UnityEngine;
+using UnityEngine.SceneManagement;
 
-public class SecuringByLicenseKey : MonoBehaviour
+namespace Assets.PatchKit.Securing_by_the_license_key
 {
-    private const string AppDataFileName = "app_data.json";
-    private static bool isFirstStart = true;
-    private string _appDataPath;
-    private string _filePath;
-    private GUIStyle guiStyle;
-    private Rect windowRect = new Rect((Screen.width - 300) / 2, (Screen.height - 100) / 2, 300, 100);
-    private bool show = false;
-    private string _labelMessage;
-    private string _contentMessage;
-    private string host = "keys2.patchkit.net";
-    private string path = "/v2/keys/{key}";
-    
-    public string AppSecret;
-
-    /// <summary>
-    /// Data structure stored in file.
-    /// </summary>
-    private struct Data
+    public class SecuringByLicenseKey : MonoBehaviour
     {
-        [DefaultValue("patcher_data")] [JsonProperty("file_id", DefaultValueHandling = DefaultValueHandling.Populate)]
-        public string FileId;
+        private const string AppDataFileName = "app_data.json";
+        private static bool _isFirstStart = true;
+        private string _appDataPath;
+        private string _filePath;
+        private GUIStyle _guiStyle;
+        private Rect _windowRect = new Rect((Screen.width - 300) / 2, (Screen.height - 160) / 2, 300, 160);
+        private bool _show = false;
+        private bool _notFoundKey = false;
+        private string _labelMessage;
+        private string _contentMessage;
+        private string _tmpKey;
+        private int _idWindow = 0;
+        private string _host = "keys2.patchkit.net";
+        private string _path = "/v2/keys/{key}";
+        
+        public Options Option;
+        public List<GameObject> Objects;
+        public SceneAsset SceneLoad;
+        public bool NotExecuteInEditor = false;
+        public string AppSecret;
 
-        [DefaultValue("1.0")] [JsonProperty("version", DefaultValueHandling = DefaultValueHandling.Populate)]
-        public string Version;
+        public enum Options
+        { 
+            TimeStopStart, 
+            EnablesSelectedObjects, 
+            LoadNewScene, 
+            CallbackEntryAndExit
+        }
 
-        [DefaultValue("")] [JsonProperty("product_key", DefaultValueHandling = DefaultValueHandling.Populate)]
-        public string ProductKey;
-
-        [DefaultValue("none")]
-        [JsonProperty("product_key_encryption", DefaultValueHandling = DefaultValueHandling.Populate)]
-        public string ProductKeyEncryption;
-
-        [JsonProperty("_fileVersions")] public Dictionary<string, int> FileVersionIds;
-    }
-
-    private Data _data;
-
-    void Start()
-    {
-#if UNITY_EDITOR
-        return;
-#endif
-        if (isFirstStart)
+        /// <summary>
+        /// Data structure stored in file.
+        /// </summary>
+        private struct Data
         {
-            isFirstStart = false;
-            guiStyle = new GUIStyle();
-            guiStyle.alignment = TextAnchor.UpperCenter;
-            guiStyle.wordWrap = true;
+            [DefaultValue("patcher_data")] [JsonProperty("file_id", DefaultValueHandling = DefaultValueHandling.Populate)]
+            public string FileId;
 
-            Time.timeScale = 0;
-            var checkNetwork = GetResponse("", "", host);
-            if (checkNetwork == null)
+            [DefaultValue("1.0")] [JsonProperty("version", DefaultValueHandling = DefaultValueHandling.Populate)]
+            public string Version;
+
+            [DefaultValue("")] [JsonProperty("product_key", DefaultValueHandling = DefaultValueHandling.Populate)]
+            public string ProductKey;
+
+            [DefaultValue("none")]
+            [JsonProperty("product_key_encryption", DefaultValueHandling = DefaultValueHandling.Populate)]
+            public string ProductKeyEncryption;
+
+            [JsonProperty("_fileVersions")] public Dictionary<string, int> FileVersionIds;
+        }
+
+        private Data _data;
+
+
+        public virtual void OnEntry() {}
+    
+        public virtual void OnExit() {}
+    
+        private void Entry()
+        {
+            switch (Option)
             {
-                _labelMessage = "No internet connection";
-                _contentMessage = "Your are not connected to internet. Please check your internet connection!";
-                show = true;
-                return;
+                case Options.TimeStopStart:
+                    Time.timeScale = 0;
+                    break;
+                case Options.EnablesSelectedObjects:
+                    Objects.ForEach(o=> o.SetActive(false));
+                    break;
+                case Options.LoadNewScene:
+                    break;
+                case Options.CallbackEntryAndExit:
+                    OnEntry();
+                    break;
             }
-
-            _appDataPath = MakeAppDataPathAbsolute();
-            _filePath = Path.Combine(_appDataPath, AppDataFileName);
-
-            Debug.Log(_filePath);
-            if (File.Exists(_filePath))
+        }
+    
+        private void Exit()
+        {
+            switch (Option)
             {
-                if (TryLoadDataFromFile())
+                case Options.TimeStopStart:
+                    Time.timeScale = 1;
+                    break;
+                case Options.EnablesSelectedObjects:
+                    Objects.ForEach(o=> o.SetActive(true)); 
+                    break;
+                case Options.LoadNewScene:
+                    SceneManager.LoadScene(SceneLoad.name);
+                    break;
+                case Options.CallbackEntryAndExit:
+                    OnExit();
+                    break;
+            } 
+        }
+    
+        void Start()
+        {
+#if UNITY_EDITOR
+           if(NotExecuteInEditor)
+                return;
+           PrefabUtility.RecordPrefabInstancePropertyModifications(this);
+#endif
+            if (_isFirstStart)
+            {
+                _isFirstStart = false;
+                _guiStyle = new GUIStyle();
+                _guiStyle.alignment = TextAnchor.UpperCenter;
+                _guiStyle.wordWrap = true;
+
+                Entry();
+                var checkNetwork = GetResponse("", "", _host);
+                if (checkNetwork == null)
                 {
-                    var keyInfo = GetKeyInfo();
-                    if (keyInfo != null && keyInfo.StatusCode == HttpStatusCode.OK)
+                    _labelMessage = "No internet connection";
+                    _contentMessage = "Your are not connected to internet. Please check your internet connection!";
+                    _show = true;
+                    return;
+                }
+                
+                if(string.IsNullOrEmpty(AppSecret))
+                {
+                    _labelMessage = "App secret Application is empty";
+                    _contentMessage = "App secret is empty. Please contact with your developer!";
+                    _show = true;
+                    return;
+                }
+                _appDataPath = MakeAppDataPathAbsolute();
+                _filePath = Path.Combine(_appDataPath, AppDataFileName);
+
+                Debug.Log(_filePath);
+                if (File.Exists(_filePath))
+                {
+                    if (TryLoadDataFromFile())
                     {
-                        Time.timeScale = 1;
-                        return;
+                        var keyInfo = GetKeyInfo(_data.ProductKey);
+                        if (keyInfo != null && keyInfo.StatusCode == HttpStatusCode.OK)
+                        {
+                            Exit();
+                            return;
+                        }
+                        else
+                        {
+                            _labelMessage = "License key is not found";
+                            _contentMessage = $"License key is not found. Please enter the license key:";
+                            _idWindow = 1;
+                        }
                     }
                     else
                     {
-                        _labelMessage = "License key is not found";
-                        _contentMessage = $"License key is not found. Please start the game using the Launcher.";
+                        _labelMessage = $"Failed to load data from {AppDataFileName}";
+                        _contentMessage =
+                            $"Failed to load data from {AppDataFileName}. Please enter the license key:";
+                        _idWindow = 1;
                     }
                 }
                 else
                 {
-                    _labelMessage = $"Failed to load data from {AppDataFileName}";
-                    _contentMessage =
-                        $"Failed to load data from {AppDataFileName}. Please start the game using the Launcher.";
+                    _labelMessage = $"Not found {AppDataFileName}";
+                    _contentMessage = $"Not found {AppDataFileName}. Please enter the license key:";
+                    _idWindow = 1;
+                }
+                _show = true;
+            }
+        }
+
+        private HttpWebResponse GetKeyInfo(string key)
+        {
+            List<string> queryList = new List<string>();
+            string path = _path;
+            path = path.Replace("{key}", key);
+            queryList.Add("app_secret=" + AppSecret);
+
+            string query = string.Join("&", queryList.ToArray());
+            return GetResponse(path, query, _host);
+        }
+
+        private HttpWebResponse GetResponse(string path, string query, string host)
+        {
+            try
+            {
+                Debug.Log("Getting response for path: '" + path + "' and query: '" + query + "'...");
+
+                Debug.Log(host);
+                var uri = new UriBuilder
+                {
+                    Scheme = "https",
+                    Host = host,
+                    Path = path,
+                    Query = query
+                }.Uri;
+                Debug.Log(uri);
+                HttpWebRequest httpWebRequest = (HttpWebRequest) WebRequest.Create(uri);
+                httpWebRequest.Timeout = 15000000; //15s
+                return (HttpWebResponse) httpWebRequest.GetResponse();
+            }
+            catch (WebException e)
+            {
+                using (WebResponse response = e.Response)
+                {
+                    return (HttpWebResponse) response;
                 }
             }
-            else
+        }
+
+
+        private static string MakeAppDataPathAbsolute()
+        {
+            string path = Path.GetDirectoryName(Application.dataPath);
+
+            if (Application.platform == RuntimePlatform.OSXPlayer)
             {
-                _labelMessage = $"Not found {AppDataFileName}";
-                _contentMessage = $"Not found {AppDataFileName}. Please start the game using the Launcher.";
+                path = Path.GetDirectoryName(path);
             }
-            show = true;
+
+            // ReSharper disable once AssignNullToNotNullAttribute
+            return Path.Combine(path);
         }
-    }
 
-    private HttpWebResponse GetKeyInfo()
-    {
-        List<string> queryList = new List<string>();
-        path = path.Replace("{key}", _data.ProductKey);
-        queryList.Add("app_secret=" + AppSecret);
 
-        string query = string.Join("&", queryList.ToArray());
-        return GetResponse(path, query, host);
-    }
-
-    private HttpWebResponse GetResponse(string path, string query, string host)
-    {
-        try
+        private bool TryLoadDataFromFile()
         {
-            Debug.Log("Getting response for path: '" + path + "' and query: '" + query + "'...");
+            try
+            {
+                Debug.Log("Trying to load data from file...");
 
-            Debug.Log(host);
-            var uri = new UriBuilder
+                Debug.Log("Loading content from file...");
+                var fileContent = File.ReadAllText(_filePath);
+                Debug.Log("File content loaded.");
+                Debug.Log("fileContent = " + fileContent);
+
+                Debug.Log("Deserializing data...");
+                _data = JsonConvert.DeserializeObject<Data>(fileContent);
+                Debug.Log("Data deserialized.");
+                _tmpKey = _data.ProductKey;
+                Debug.Log("Data loaded from file.");
+
+                return true;
+            }
+            catch (Exception e)
             {
-                Scheme = "https",
-                Host = host,
-                Path = path,
-                Query = query
-            }.Uri;
-            Debug.Log(uri);
-            HttpWebRequest httpWebRequest = (HttpWebRequest) WebRequest.Create(uri);
-            httpWebRequest.Timeout = 15000000; //15s
-            return (HttpWebResponse) httpWebRequest.GetResponse();
-        }
-        catch (WebException e)
-        {
-            using (WebResponse response = e.Response)
-            {
-                return (HttpWebResponse) response;
+                Debug.LogWarning("Failed to load data from file." + e);
+
+                return false;
             }
         }
-    }
 
-
-    private static string MakeAppDataPathAbsolute()
-    {
-        string path = Path.GetDirectoryName(Application.dataPath);
-
-        if (Application.platform == RuntimePlatform.OSXPlayer)
+        void OnGUI()
         {
-            path = Path.GetDirectoryName(path);
+            if (_show)
+            {
+
+                GUI.color = new Color(1,1,1,0.5f); // half transparent
+                GUI.Box (new Rect (0,0,Screen.width,Screen.height), "");
+                _windowRect = GUI.Window(_idWindow, _windowRect, DialogWindow, _labelMessage);
+            }
         }
 
-        // ReSharper disable once AssignNullToNotNullAttribute
-        return Path.Combine(path);
-    }
-
-
-    private bool TryLoadDataFromFile()
-    {
-        try
+        void DialogWindow(int windowID)
         {
-            Debug.Log("Trying to load data from file...");
+            GUI.Label(new Rect(0, 20, _windowRect.width, 40), _contentMessage, _guiStyle);
+            if (_notFoundKey)
+            {
+                GUI.Label(
+                    new Rect(_windowRect.width / 4, 60, _windowRect.width / 2, 20),
+                    "License key is not found",
+                    new GUIStyle() {normal = new GUIStyleState() {textColor = Color.red}});
+            }
 
-            Debug.Log("Loading content from file...");
-            var fileContent = File.ReadAllText(_filePath);
-            Debug.Log("File content loaded.");
-            Debug.Log("fileContent = " + fileContent);
-
-            Debug.Log("Deserializing data...");
-            _data = JsonConvert.DeserializeObject<Data>(fileContent);
-            Debug.Log("Data deserialized.");
-
-            Debug.Log("Data loaded from file.");
-
-            return true;
+            switch (windowID)
+            {
+                case 0:
+                    if (GUI.Button(new Rect(_windowRect.width / 4, 60, _windowRect.width / 2, 20), "OK"))
+                    {
+                        Application.Quit();
+                        _show = false;
+                    }
+                    break;
+                case 1: // key entry
+                    _tmpKey = GUI.TextField(new Rect(_windowRect.width / 10, 80, _windowRect.width *0.8f, 20), _tmpKey);
+                    if (GUI.Button(new Rect(_windowRect.width / 4, 105, _windowRect.width / 2, 20), "OK"))
+                    {
+                        if (GetKeyInfo(_tmpKey).StatusCode != HttpStatusCode.OK)
+                        {
+                            _notFoundKey = true;
+                        }
+                        else
+                        {
+                            _data.ProductKey = _tmpKey;
+                            SaveData();
+                            Exit();
+                            _show = false;
+                        }
+                    }
+                    if (GUI.Button(new Rect(_windowRect.width / 4, 130, _windowRect.width / 2, 20), "Exit"))
+                    {
+                        Application.Quit();
+                        _show = false;
+                    }
+                    break;
+            }
         }
-        catch (Exception e)
+        
+        private void SaveData()
         {
-            Debug.LogWarning("Failed to load data from file." + e);
+            Debug.Log(string.Format("Saving data to {0}", _filePath));
 
-            return false;
+            CreateDataDir();
+            File.WriteAllText(_filePath, JsonConvert.SerializeObject(_data, Formatting.None));
+
+            Debug.Log("Data saved.");
         }
-    }
-
-    void OnGUI()
-    {
-        if (show)
-            windowRect = GUI.Window(0, windowRect, DialogWindow, _labelMessage);
-    }
-
-    void DialogWindow(int windowID)
-    {
-        GUI.Label(new Rect(5, 20, windowRect.width, 40), _contentMessage, guiStyle);
-
-        if (GUI.Button(new Rect(windowRect.width / 4, 60, windowRect.width / 2, 20), "OK"))
+        private void CreateDataDir()
         {
-            Application.Quit();
-            show = false;
+            string dirPath = Path.GetDirectoryName(_filePath);
+            if (dirPath != null)
+            {
+                Directory.CreateDirectory(dirPath);
+            }
         }
     }
 }
