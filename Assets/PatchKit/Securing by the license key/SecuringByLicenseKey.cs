@@ -2,13 +2,11 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-namespace Assets.PatchKit.Securing_by_the_license_key
+namespace PatchKit
 {
     public class SecuringByLicenseKey : MonoBehaviour
     {
@@ -17,7 +15,8 @@ namespace Assets.PatchKit.Securing_by_the_license_key
         private string _appDataPath;
         private string _filePath;
         private GUIStyle _guiStyle;
-        private Rect _windowRect = new Rect((Screen.width - 300) / 2, (Screen.height - 160) / 2, 300, 160);
+        private Rect _windowRectKeyInput = new Rect((Screen.width - 300) / 2, (Screen.height - 160) / 2, 300, 160);
+        private Rect _windowRectInfo = new Rect((Screen.width - 300) / 2, (Screen.height - 160) / 2, 300, 100);
         private bool _show = false;
         private bool _notFoundKey = false;
         private string _labelMessage;
@@ -26,27 +25,36 @@ namespace Assets.PatchKit.Securing_by_the_license_key
         private int _idWindow = 0;
         private string _host = "keys2.patchkit.net";
         private string _path = "/v2/keys/{key}";
-        private string _productKey = "product_key";
-        
+        private AppData _data;
+
         public Options Option;
         public List<GameObject> Objects;
         public SceneAsset SceneLoad;
         public bool NotExecuteInEditor = false;
         public string AppSecret;
-        private JObject _data;
+
+        [Serializable]
+        struct AppData
+        {
+            public string product_key;
+        }
 
         public enum Options
-        { 
-            TimeStopStart, 
-            EnablesSelectedObjects, 
-            LoadNewScene, 
+        {
+            TimeStopStart,
+            EnablesSelectedObjects,
+            LoadNewScene,
             CallbackEntryAndExit
         }
 
-        public virtual void OnEntry() {}
-    
-        public virtual void OnExit() {}
-    
+        public virtual void OnEntry()
+        {
+        }
+
+        public virtual void OnExit()
+        {
+        }
+
         private void Entry()
         {
             switch (Option)
@@ -55,7 +63,7 @@ namespace Assets.PatchKit.Securing_by_the_license_key
                     Time.timeScale = 0;
                     break;
                 case Options.EnablesSelectedObjects:
-                    Objects.ForEach(o=> o.SetActive(false));
+                    Objects.ForEach(o => o.SetActive(false));
                     break;
                 case Options.LoadNewScene:
                     break;
@@ -64,7 +72,7 @@ namespace Assets.PatchKit.Securing_by_the_license_key
                     break;
             }
         }
-    
+
         private void Exit()
         {
             switch (Option)
@@ -73,7 +81,7 @@ namespace Assets.PatchKit.Securing_by_the_license_key
                     Time.timeScale = 1;
                     break;
                 case Options.EnablesSelectedObjects:
-                    Objects.ForEach(o=> o.SetActive(true)); 
+                    Objects.ForEach(o => o.SetActive(true));
                     break;
                 case Options.LoadNewScene:
                     SceneManager.LoadScene(SceneLoad.name);
@@ -81,15 +89,15 @@ namespace Assets.PatchKit.Securing_by_the_license_key
                 case Options.CallbackEntryAndExit:
                     OnExit();
                     break;
-            } 
+            }
         }
-    
+
         void Start()
         {
 #if UNITY_EDITOR
-           if(NotExecuteInEditor)
+            if (NotExecuteInEditor)
                 return;
-           PrefabUtility.RecordPrefabInstancePropertyModifications(this);
+            PrefabUtility.RecordPrefabInstancePropertyModifications(this);
 #endif
             if (_isFirstStart)
             {
@@ -107,33 +115,28 @@ namespace Assets.PatchKit.Securing_by_the_license_key
                     _show = true;
                     return;
                 }
-                
-                if(string.IsNullOrEmpty(AppSecret))
+
+                if (string.IsNullOrEmpty(AppSecret))
                 {
                     _labelMessage = "App secret Application is empty";
                     _contentMessage = "App secret is empty. Please contact with your developer!";
                     _show = true;
                     return;
                 }
+
                 _appDataPath = MakeAppDataPathAbsolute();
                 _filePath = Path.Combine(_appDataPath, AppDataFileName);
 
                 Debug.Log(_filePath);
+                _idWindow = 1;
                 if (File.Exists(_filePath))
                 {
                     if (TryLoadDataFromFile())
                     {
                         var keyInfo = GetKeyInfo(_tmpKey);
-                        if (keyInfo != null && keyInfo.StatusCode == HttpStatusCode.OK)
+                        if (keyInfo != null && CheckStatusCode(keyInfo))
                         {
-                            Exit();
                             return;
-                        }
-                        else
-                        {
-                            _labelMessage = "License key is not found";
-                            _contentMessage = $"License key is not found. Please enter the license key:";
-                            _idWindow = 1;
                         }
                     }
                     else
@@ -141,17 +144,47 @@ namespace Assets.PatchKit.Securing_by_the_license_key
                         _labelMessage = $"Failed to load data from {AppDataFileName}";
                         _contentMessage =
                             $"Failed to load data from {AppDataFileName}. Please enter the license key:";
-                        _idWindow = 1;
                     }
                 }
                 else
                 {
                     _labelMessage = $"Not found {AppDataFileName}";
                     _contentMessage = $"Not found {AppDataFileName}. Please enter the license key:";
-                    _idWindow = 1;
                 }
+
                 _show = true;
             }
+        }
+
+        private bool CheckStatusCode(HttpWebResponse keyInfo)
+        {
+            if (keyInfo != null && keyInfo.StatusCode == HttpStatusCode.OK)
+            {
+                Exit();
+                return true;
+            }
+            else if (keyInfo != null && keyInfo.StatusCode == (HttpStatusCode) 410)
+            {
+                _labelMessage = "License key is blocked";
+                _contentMessage = "License key is blocked. Please contact with your developer!";
+            }
+            else if (keyInfo != null && keyInfo.StatusCode == (HttpStatusCode) 404)
+            {
+                _labelMessage = "License key is not found.";
+                _contentMessage = "License key is not found. Please enter the license key:";
+            }
+            else if (keyInfo != null && keyInfo.StatusCode == (HttpStatusCode) 403)
+            {
+                _labelMessage = "License key validation service is not available";
+                _contentMessage = "License key validation service is not available. Try again.";
+            }
+            else
+            {
+                _labelMessage = "Unrecognized server or API error";
+                _contentMessage = "Unrecognized server or API error. Please check your internet connection!";
+            }
+
+            return false;
         }
 
         private HttpWebResponse GetKeyInfo(string key)
@@ -220,9 +253,9 @@ namespace Assets.PatchKit.Securing_by_the_license_key
                 Debug.Log("fileContent = " + fileContent);
 
                 Debug.Log("Deserializing data...");
-                _data = JObject.Parse(fileContent);
+                _data = JsonUtility.FromJson<AppData>(fileContent);
                 Debug.Log("Data deserialized.");
-                _tmpKey = _data[_productKey]?.ToString();
+                _tmpKey = _data.product_key;
                 Debug.Log("Data loaded from file. " + _tmpKey);
 
                 return true;
@@ -239,20 +272,27 @@ namespace Assets.PatchKit.Securing_by_the_license_key
         {
             if (_show)
             {
-
-                GUI.color = new Color(1,1,1,0.5f); // half transparent
-                GUI.Box (new Rect (0,0,Screen.width,Screen.height), "");
-                _windowRect = GUI.Window(_idWindow, _windowRect, DialogWindow, _labelMessage);
+                GUI.color = new Color(1, 1, 1, 0.5f); // half transparent
+                GUI.Box(new Rect(0, 0, Screen.width, Screen.height), "");
+                switch (_idWindow)
+                {
+                    case 0:
+                        GUI.Window(_idWindow, _windowRectInfo, DialogWindow, _labelMessage);
+                        break;
+                    case 1:
+                        GUI.Window(_idWindow, _windowRectKeyInput, DialogWindow, _labelMessage);
+                        break;
+                }
             }
         }
 
         void DialogWindow(int windowID)
         {
-            GUI.Label(new Rect(0, 20, _windowRect.width, 40), _contentMessage, _guiStyle);
+            GUI.Label(new Rect(0, 20, _windowRectKeyInput.width, 40), _contentMessage, _guiStyle);
             if (_notFoundKey)
             {
                 GUI.Label(
-                    new Rect(_windowRect.width / 4, 60, _windowRect.width / 2, 20),
+                    new Rect(_windowRectKeyInput.width / 4, 60, _windowRectKeyInput.width / 2, 20),
                     "License key is not found",
                     new GUIStyle() {normal = new GUIStyleState() {textColor = Color.red}});
             }
@@ -260,52 +300,37 @@ namespace Assets.PatchKit.Securing_by_the_license_key
             switch (windowID)
             {
                 case 0:
-                    if (GUI.Button(new Rect(_windowRect.width / 4, 60, _windowRect.width / 2, 20), "OK"))
+                    if (GUI.Button(new Rect(_windowRectKeyInput.width / 4, 60, _windowRectKeyInput.width / 2, 20), "OK"))
                     {
                         Application.Quit();
                         _show = false;
                     }
+
                     break;
                 case 1: // key entry
-                    _tmpKey = GUI.TextField(new Rect(_windowRect.width / 10, 80, _windowRect.width *0.8f, 20), _tmpKey);
-                    if (GUI.Button(new Rect(_windowRect.width / 4, 105, _windowRect.width / 2, 20), "OK"))
+                    _tmpKey = GUI.TextField(new Rect(_windowRectKeyInput.width / 10, 80, _windowRectKeyInput.width * 0.8f, 20),
+                        _tmpKey);
+                    if (GUI.Button(new Rect(_windowRectKeyInput.width / 4, 105, _windowRectKeyInput.width / 2, 20), "OK"))
                     {
-                        if (GetKeyInfo(_tmpKey).StatusCode != HttpStatusCode.OK)
+                        if (CheckStatusCode(GetKeyInfo(_tmpKey)))
                         {
-                            _notFoundKey = true;
-                        }
-                        else
-                        {
-                            _data[_productKey] = _tmpKey;
-                            SaveData();
+                            _data.product_key = _tmpKey;
                             Exit();
                             _show = false;
                         }
+                        else
+                        {
+                            _notFoundKey = true;
+                        }
                     }
-                    if (GUI.Button(new Rect(_windowRect.width / 4, 130, _windowRect.width / 2, 20), "Exit"))
+
+                    if (GUI.Button(new Rect(_windowRectKeyInput.width / 4, 130, _windowRectKeyInput.width / 2, 20), "Exit"))
                     {
                         Application.Quit();
                         _show = false;
                     }
+
                     break;
-            }
-        }
-        
-        private void SaveData()
-        {
-            Debug.Log(string.Format("Saving data to {0}", _filePath));
-
-            CreateDataDir();
-            File.WriteAllText(_filePath, JsonConvert.SerializeObject(_data, Formatting.Indented));
-
-            Debug.Log("Data saved.");
-        }
-        private void CreateDataDir()
-        {
-            string dirPath = Path.GetDirectoryName(_filePath);
-            if (dirPath != null)
-            {
-                Directory.CreateDirectory(dirPath);
             }
         }
     }

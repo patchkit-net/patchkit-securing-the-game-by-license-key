@@ -1,10 +1,10 @@
 ﻿using UnityEditor;
 using UnityEngine;
 
-namespace Assets.PatchKit.Securing_by_the_license_key.Editor
+namespace PatchKit
 {
     [CustomEditor(typeof(SecuringByLicenseKey))]
-    public class SecuringByLicenseKeyEditor : UnityEditor.Editor
+    public class SecuringByLicenseKeyEditor : Editor
     {
         public override void OnInspectorGUI()
         {
