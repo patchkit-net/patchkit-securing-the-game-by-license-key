@@ -5,7 +5,7 @@ This package allows you to check the license key from the app_data.json file cre
 
 ## Installation steps
 
-1. Download [PatchkitLicenseKey.unitypackage](https://github.com/Szczyrk/patchkit-securing-the-game-by-license-key/blob/master/PatchkitLicenseKey.unitypackage) or [source files](https://github.com/Szczyrk/patchkit-securing-the-game-by-license-key/archive/master.zip)(go to step 4).
+1. Download [patchkit-securing-by-the-license-key.unitypackage](https://github.com/patchkit-net/patchkit-securing-the-game-by-license-key/releases/latest) or [source files](https://github.com/Szczyrk/patchkit-securing-the-game-by-license-key/archive/master.zip)(go to step 4).
 2. Open downloaded package choosing **Assets/Import Package/Custom Package** in the Unity menu.
 3. Confirm importing all the assets by clicking the Import button.
 4. [Log in](https://panel.patchkit.net/users/login_form) or if you don't have a PatchKit account yet, it is time to [create it](https://panel.patchkit.net/users/register).
