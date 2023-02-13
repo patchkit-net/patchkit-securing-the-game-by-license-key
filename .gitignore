@@ -17,3 +17,4 @@
 _ReSharper*
 /*.sublime-project
 /*.sublime-workspace
+/Assets/AssetStoreTools*

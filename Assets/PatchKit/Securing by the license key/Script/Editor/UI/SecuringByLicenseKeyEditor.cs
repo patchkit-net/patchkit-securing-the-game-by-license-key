@@ -68,6 +68,7 @@ public class SecuringByLicenseKeyEditor : Editor
             GUILayout.FlexibleSpace();
         }
         EditorGUILayout.EndHorizontal();
+        GUILayout.Label("\nVersion " + SecuringByLicenseKeyVersion.Name, EditorStyles.centeredGreyMiniLabel);
     }
 
     private void SetAppSecret()
